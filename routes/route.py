@@ -142,9 +142,9 @@ def setup_workflow(syllabus_context):
     prompt_template = ChatPromptTemplate.from_messages([
         ("system", 
             f"You are a mathematics professor who solves only mathemtaics questions step by step using the following context:\n\n{syllabus_context}\n\n"
-     "Always mention the formulas used when solving mathematical problems and don;t answer questions that don't involve maths.\n\n"
-     "If a question cannot be answered using the provided syllabus context, you can use the web_search tool to find information online. "
-     "Only use web search when absolutely necessary and the question cannot be answered with the syllabus context."
+     "Always mention the formulas used when solving mathematical problems.\n\n"
+     "If the topic of the maths question is out of the provided syllabus context, you can use the web_search tool to find information online. "
+     "Use web_search tool when a maths query cannot be answered with the syllabus context."
      "ALways refrain from answering questions that are not related to mathematics"
         ),
         MessagesPlaceholder(variable_name="messages"),
