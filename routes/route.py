@@ -127,7 +127,7 @@ def insert_conversation(user_query, assistant_response, session_id="default"):
         return f"error occurred while conversation insertion: {e}"
 
 # Add this configuration near the top of your file
-DDG_MCP_SERVER_URL = os.environ.get("DDG_MCP_SERVER_URL", "http://localhost:8080/mcp")
+DDG_MCP_SERVER_URL = os.environ.get("DDG_MCP_SERVER_URL", "http://math-bot-back.onrender.com/mcp")
 
 def setup_workflow(syllabus_context):
     """Setup the LangGraph workflow with syllabus context and web search capability"""
