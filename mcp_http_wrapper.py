@@ -188,12 +188,13 @@ async def handle_search_request(request: SearchRequest):
 
 if __name__ == "__main__":
     import os
-    
-    # Get configuration from environment or use defaults
-    host = os.environ.get("SEARCH_HOST", "0.0.0.0")
-    port = int(os.environ.get("SEARCH_PORT", "8080"))
-    
-    print(f"Starting Simple Search HTTP Server on {host}:{port}")
+    import sys
+
+    # Get dynamic port or fallback to internal one
+    port = int(os.environ.get("MCP_PORT", "8765"))  # Not 8080!
+    host = os.environ.get("MCP_HOST", "127.0.0.1")
+
+    print(f"Starting MCP server on {host}:{port}")
     
     uvicorn.run(
         app,
