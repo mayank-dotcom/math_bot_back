@@ -31,7 +31,7 @@ class DuckDuckGoSearchTool(BaseTool):
             print(f"Performing web search for: {query}")
             print(f"Using MCP URL: {mcp_server_url}")
 
-            timeout = aiohttp.ClientTimeout(total=45, connect=15)
+            timeout = aiohttp.ClientTimeout(total=120, connect=120)
 
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 payload = {
