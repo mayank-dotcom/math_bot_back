@@ -21,8 +21,19 @@ class DuckDuckGoSearchTool(BaseTool):
 
     def _get_mcp_url(self) -> str:
         """Get the MCP server URL"""
-        # Use internal endpoint when running in the same process
-        base_url = os.environ.get("BASE_URL", "http://localhost:8000")
+        # Check if we're running on Render or another cloud platform
+        base_url = os.environ.get("BASE_URL")
+        
+        if not base_url:
+            # Try to detect the current environment
+            if os.environ.get("RENDER"):
+                # Running on Render
+                service_name = os.environ.get("RENDER_SERVICE_NAME", "math-bot-back")
+                base_url = f"https://{service_name}.onrender.com"
+            else:
+                # Local development
+                base_url = "http://localhost:8000"
+        
         return f"{base_url}/mcp"
 
     async def _arun(self, query: str) -> str:

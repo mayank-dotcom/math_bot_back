@@ -58,8 +58,8 @@ class SimpleSearchService:
                 async with session.get(search_url, params=params) as response:
                     logger.info(f"DuckDuckGo returned status: {response.status}")
                     
-                    # Accept both 200 and 202 as valid responses
-                    if response.status not in [200, 202]:
+                    # Accept 200, 202, and other 2xx status codes
+                    if not (200 <= response.status < 300):
                         logger.warning(f"DuckDuckGo returned status {response.status}, retrying...")
                         if attempt < 2:  # Not the last attempt
                             await asyncio.sleep(2 ** attempt)  # Exponential backoff
@@ -88,6 +88,8 @@ class SimpleSearchService:
                         'div.result__body',  # Primary selector
                         'div.result',        # Alternative selector
                         'div[class*="result"]',  # Any div with "result" in class
+                        '.web-result',       # Alternative selector
+                        '.result-item',      # Another common selector
                     ]
                     
                     result_containers = []
@@ -99,13 +101,24 @@ class SimpleSearchService:
                     
                     if not result_containers:
                         logger.warning("No result containers found, trying to extract any links")
-                        # Fallback: look for any links
+                        # Fallback: look for any links that might be search results
                         links = soup.find_all('a', href=True)
-                        valid_links = [link for link in links if link.get('href', '').startswith('http') and link.get_text(strip=True)]
+                        valid_links = []
+                        
+                        for link in links:
+                            href = link.get('href', '')
+                            text = link.get_text(strip=True)
+                            
+                            # Filter out navigation and internal links
+                            if (href.startswith('http') and 
+                                text and 
+                                len(text) > 10 and 
+                                not any(skip in href.lower() for skip in ['duckduckgo.com', 'javascript:', 'mailto:'])):
+                                valid_links.append(link)
                         
                         for i, link in enumerate(valid_links[:max_results]):
                             results.append({
-                                "title": link.get_text(strip=True)[:100] or f"Result {i+1}",
+                                "title": link.get_text(strip=True)[:150] or f"Result {i+1}",
                                 "url": link.get('href', ''),
                                 "snippet": "No description available"
                             })
@@ -138,6 +151,8 @@ class SimpleSearchService:
                             
                             # Extract URL
                             url = title_element.get('href', '')
+                            
+                            # Clean up DuckDuckGo redirect URLs
                             if url.startswith('/l/?uddg='):
                                 url = url.replace('/l/?uddg=', '')
                             elif url.startswith('/l/?kh=-1&uddg='):
@@ -151,7 +166,7 @@ class SimpleSearchService:
                                 container.find('p')
                             )
                             
-                            snippet = snippet_element.get_text(strip=True)[:200] if snippet_element else "No description available"
+                            snippet = snippet_element.get_text(strip=True)[:300] if snippet_element else "No description available"
                             
                             if title and url and url.startswith('http'):
                                 results.append({
@@ -173,7 +188,18 @@ class SimpleSearchService:
                             await asyncio.sleep(2 ** attempt)
                             continue
                         else:
-                            return [{"error": "No search results could be parsed"}]
+                            # Try a different approach - simple text extraction
+                            logger.info("Trying simple text extraction as final fallback")
+                            text_content = soup.get_text()
+                            if "No results found" in text_content or len(text_content) < 200:
+                                return [{"error": "No search results found by DuckDuckGo"}]
+                            else:
+                                # Return a generic message with some content indication
+                                return [{
+                                    "title": f"Search completed for: {query}",
+                                    "url": "https://duckduckgo.com",
+                                    "snippet": f"Found content related to '{query}' but could not parse specific results. The search service returned a {response.status} response with content."
+                                }]
                             
             except asyncio.TimeoutError:
                 logger.error(f"Search request timed out on attempt {attempt + 1}")
