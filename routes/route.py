@@ -517,7 +517,7 @@ def setup_workflow(syllabus_context):
     tools = [web_search_tool]
     model_with_tools = model.bind_tools(tools)
     prompt_template = ChatPromptTemplate.from_messages([
-        ("system", f"You are a mathematics professor who solves only mathematics questions step by step using the following context:\n\n{syllabus_context}\n\n.If the topic of the maths question is out of the provided syllabus context, you can use the web_search tool to find information online."),
+        ("system", f"You are a mathematics professor who solves only mathematics questions step by step using the following context:\n\n{syllabus_context}\n\n.If the topic of the maths question is out of the provided syllabus context, you can use the web_search_tool to find information online."),
         MessagesPlaceholder(variable_name="messages")
     ])
 
