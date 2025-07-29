@@ -35,12 +35,9 @@ fastapi_app.add_middleware(
 async def debug_middleware(request, call_next):
     if request.url.path.startswith("/api/ask-ai"):
         print(f"Request to {request.url.path}")
-        
     response = await call_next(request)
-    
     if request.url.path.startswith("/api/ask-ai"):
         print(f"Response status: {response.status_code}")
-        
     return response
 
 # MCP Request Model
@@ -52,7 +49,7 @@ class SearchRequest(BaseModel):
 class SimpleSearchService:
     def __init__(self):
         self.session = None
-    
+
     async def get_session(self):
         if not self.session:
             self.session = aiohttp.ClientSession(
@@ -62,83 +59,49 @@ class SimpleSearchService:
                 }
             )
         return self.session
-    
+
     async def search_duckduckgo(self, query: str, max_results: int = 5) -> List[Dict[str, Any]]:
-        """Perform direct search using DuckDuckGo HTML interface"""
         for attempt in range(3):
             try:
                 session = await self.get_session()
-                
                 search_url = "https://html.duckduckgo.com/html/"
-                params = {
-                    'q': query,
-                    'b': '',
-                    'kl': 'us-en',
-                }
-                
+                params = {'q': query, 'b': '', 'kl': 'us-en', 's': '0'}
                 logger.info(f"Attempt {attempt + 1}: Searching for: {query}")
-                
+
                 async with session.get(search_url, params=params) as response:
                     logger.info(f"DuckDuckGo returned status: {response.status}")
-                    
-                    # Accept all 2xx status codes including 202
                     if not (200 <= response.status < 300):
                         logger.warning(f"DuckDuckGo returned status {response.status}, retrying...")
                         if attempt < 2:
                             await asyncio.sleep(2 ** attempt)
                             continue
                         return [{"error": f"HTTP {response.status}: Failed to fetch search results after 3 attempts"}]
-                    
+
                     html_content = await response.text()
-                    
                     if not html_content or len(html_content) < 100:
                         logger.warning(f"Received minimal content on attempt {attempt + 1}")
                         if attempt < 2:
                             await asyncio.sleep(2 ** attempt)
                             continue
-                        return [{"error": "Received empty response from search service"}]
-                    
+                        return [{"error": "Received empty or minimal response from search service"}]
+
                     soup = BeautifulSoup(html_content, 'html.parser')
-                    
                     results = []
                     result_containers = soup.find_all('div', class_='result__body')
-                    
-                    logger.info(f"Found {len(result_containers)} result containers")
-                    
                     for container in result_containers[:max_results]:
                         try:
                             title_element = container.find('a', class_='result__a')
                             title = title_element.get_text(strip=True) if title_element else "No title"
-                            
                             url = title_element.get('href', '') if title_element else ''
                             if url.startswith('/l/?uddg='):
                                 url = url.replace('/l/?uddg=', '')
-                            
                             snippet_element = container.find('a', class_='result__snippet')
                             snippet = snippet_element.get_text(strip=True) if snippet_element else "No description available"
-                            
                             if title and url and url.startswith('http'):
-                                results.append({
-                                    "title": title,
-                                    "url": url,
-                                    "snippet": snippet
-                                })
-                                
+                                results.append({"title": title, "url": url, "snippet": snippet})
                         except Exception as e:
                             logger.error(f"Error parsing search result: {e}")
                             continue
-                    
-                    if not results:
-                        # Fallback: try to find any links
-                        links = soup.find_all('a', class_='result__a')
-                        for i, link in enumerate(links[:max_results]):
-                            if link.get('href') and link.get('href').startswith('http'):
-                                results.append({
-                                    "title": link.get_text(strip=True) or f"Result {i+1}",
-                                    "url": link.get('href', ''),
-                                    "snippet": "No description available"
-                                })
-                    
                     if results:
                         logger.info(f"Successfully extracted {len(results)} results")
                         return results
@@ -151,7 +114,6 @@ class SimpleSearchService:
                             "url": "https://duckduckgo.com",
                             "snippet": f"Search was performed but specific results could not be parsed. Status: {response.status}"
                         }]
-                        
             except asyncio.TimeoutError:
                 logger.error(f"Search request timed out on attempt {attempt + 1}")
                 if attempt < 2:
@@ -164,9 +126,8 @@ class SimpleSearchService:
                     await asyncio.sleep(2 ** attempt)
                     continue
                 return [{"error": f"Search error: {str(e)}"}]
-        
         return [{"error": "All search attempts failed"}]
-    
+
     async def close(self):
         if self.session:
             await self.session.close()
@@ -182,30 +143,18 @@ def health_check():
 # MCP endpoint (directly in main app)
 @fastapi_app.post("/mcp")
 async def handle_search_request(request: SearchRequest):
-    """Handle search requests via HTTP"""
     try:
         logger.info(f"Received request: {request.method} with params: {request.params}")
-        
         if request.method != "search":
             raise HTTPException(status_code=400, detail=f"Unsupported method: {request.method}")
-        
         query = request.params.get("query", "")
         max_results = request.params.get("max_results", 5)
-        
         if not query:
             raise HTTPException(status_code=400, detail="Query parameter is required")
-        
-        # Perform search
         results = await search_service.search_duckduckgo(query, max_results)
-        
-        # Format results for response
         if len(results) == 1 and "error" in results[0]:
             return {"error": results[0]["error"]}
-        
-        # Format results as a readable string
-        formatted_results = []
-        formatted_results.append(f"Search Results for '{query}':")
-        
+        formatted_results = [f"Search Results for '{query}':"]
         for i, result in enumerate(results, 1):
             if "error" in result:
                 formatted_results.append(f"{i}. Error: {result['error']}")
@@ -213,199 +162,16 @@ async def handle_search_request(request: SearchRequest):
                 title = result.get('title', 'No title')
                 url = result.get('url', 'No URL')
                 snippet = result.get('snippet', 'No description')
-                
                 formatted_results.append(f"\n{i}. {title}")
                 formatted_results.append(f"   URL: {url}")
                 formatted_results.append(f"   Description: {snippet}")
-        
         result_text = "\n".join(formatted_results)
-        
         return {"result": result_text}
-        
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error handling search request: {e}")
         raise HTTPException(status_code=500, detail=f"Search server error: {str(e)}")
-
-# Debug routes
-@fastapi_app.get("/debug/test-web-search-tool")
-async def test_web_search_tool():
-    """Test the web search tool directly"""
-    try:
-        from web_search import DuckDuckGoSearchTool
-        
-        # Create and test the tool
-        tool = DuckDuckGoSearchTool()
-        result = await tool._arun("basic algebra concepts")
-        
-        return {
-            "status": "success", 
-            "tool_result": result,
-            "message": "Web search tool is working"
-        }
-    except Exception as e:
-        import traceback
-        return {
-            "status": "error", 
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        }
-
-@fastapi_app.get("/debug/mcp-test")
-async def test_mcp_directly():
-    """Test the MCP endpoint directly"""
-    try:
-        # Test the search service directly
-        results = await search_service.search_duckduckgo("test math query", 3)
-        return {
-            "status": "success", 
-            "results": results,
-            "message": "MCP search service is working"
-        }
-    except Exception as e:
-        import traceback
-        return {
-            "status": "error", 
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        }
-
-@fastapi_app.post("/debug/mcp-full-test")
-async def test_mcp_full_flow():
-    """Test the full MCP flow like the tool would"""
-    try:
-        request = SearchRequest(
-            method="search",
-            params={"query": "algebra basics", "max_results": 3}
-        )
-        result = await handle_search_request(request)
-        return {"status": "success", "result": result}
-    except Exception as e:
-        import traceback
-        return {
-            "status": "error", 
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        }
-
-@fastapi_app.get("/debug/routes")
-def debug_routes():
-    """Debug endpoint to see all available routes"""
-    routes = []
-    for route in fastapi_app.routes:
-        routes.append({
-            "path": route.path,
-            "methods": getattr(route, 'methods', []),
-            "name": getattr(route, 'name', 'unknown')
-        })
-    return {"routes": routes}
-
-@fastapi_app.get("/debug/env-check")
-async def check_environment():
-    """Check environment variables and configuration"""
-    return {
-        "openai_api_key_set": bool(os.environ.get("OPENAI_API_KEY")),
-        "openai_api_key_length": len(os.environ.get("OPENAI_API_KEY", "")) if os.environ.get("OPENAI_API_KEY") else 0,
-        "mcp_server_url": os.environ.get("MCP_SERVER_URL", "not_set"),
-        "available_routes": [route.path for route in fastapi_app.routes],
-        "current_host": "self",
-        "environment_vars": {k: v for k, v in os.environ.items() if "API" in k or "MCP" in k or "KEY" in k}
-    }
-
-@fastapi_app.get("/debug/test-internal-mcp")
-async def test_internal_mcp():
-    """Test the internal MCP endpoint"""
-    try:
-        # Test the internal search directly
-        request = SearchRequest(
-            method="search",
-            params={"query": "test query", "max_results": 3}
-        )
-        result = await handle_search_request(request)
-        return {
-            "status": "success",
-            "internal_mcp_working": True,
-            "result": result
-        }
-    except Exception as e:
-        import traceback
-        return {
-            "status": "error",
-            "internal_mcp_working": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        }
-
-@fastapi_app.get("/debug/test-web-search-connection")
-async def test_web_search_connection():
-    """Test web search tool connection without going through LangGraph"""
-    try:
-        import aiohttp
-        import asyncio
-        
-        # Test connection to our own MCP endpoint
-        mcp_url = "http://localhost:8000/mcp"  # Assuming we're running on port 8000
-        
-        payload = {
-            "method": "search",
-            "params": {
-                "query": "simple test",
-                "max_results": 2
-            }
-        }
-        
-        timeout = aiohttp.ClientTimeout(total=30)
-        
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(
-                mcp_url,
-                json=payload,
-                headers={"Content-Type": "application/json"}
-            ) as response:
-                result = await response.json()
-                
-                return {
-                    "status": "success",
-                    "connection_working": True,
-                    "response_status": response.status,
-                    "result": result
-                }
-                
-    except Exception as e:
-        import traceback
-        return {
-            "status": "error",
-            "connection_working": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        }
-
-@fastapi_app.get("/debug/simple-ai-test")
-async def simple_ai_test():
-    """Test AI processing without web search"""
-    try:
-        from routes.route import process_ai_query
-        
-        # Simple math question that shouldn't need web search
-        simple_query = "What is 2 + 2?"
-        result = await process_ai_query(simple_query, "debug_session", 5)
-        
-        return {
-            "status": "success",
-            "ai_working": True,
-            "query": simple_query,
-            "result": result
-        }
-        
-    except Exception as e:
-        import traceback
-        return {
-            "status": "error",
-            "ai_working": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        }
 
 # Include your API routes under /api
 fastapi_app.include_router(router, prefix="/api")
