@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI, HTTPException
 from socketio_instance import sio
 from routes.route import router
@@ -49,7 +48,7 @@ class SearchRequest(BaseModel):
     method: str
     params: Dict[str, Any]
 
-# Simple Search Service (copied from your mcp_http_wrapper.py)
+# Simple Search Service (improved version)
 class SimpleSearchService:
     def __init__(self):
         self.session = None
@@ -66,73 +65,107 @@ class SimpleSearchService:
     
     async def search_duckduckgo(self, query: str, max_results: int = 5) -> List[Dict[str, Any]]:
         """Perform direct search using DuckDuckGo HTML interface"""
-        try:
-            session = await self.get_session()
-            
-            search_url = "https://html.duckduckgo.com/html/"
-            params = {
-                'q': query,
-                'b': '',
-                'kl': 'us-en',
-            }
-            
-            logger.info(f"Searching for: {query}")
-            
-            async with session.get(search_url, params=params) as response:
-                if response.status != 200:
-                    logger.error(f"DuckDuckGo returned status {response.status}")
-                    return [{"error": f"HTTP {response.status}: Failed to fetch search results"}]
+        for attempt in range(3):
+            try:
+                session = await self.get_session()
                 
-                html_content = await response.text()
-                soup = BeautifulSoup(html_content, 'html.parser')
+                search_url = "https://html.duckduckgo.com/html/"
+                params = {
+                    'q': query,
+                    'b': '',
+                    'kl': 'us-en',
+                }
                 
-                results = []
-                result_containers = soup.find_all('div', class_='result__body')
+                logger.info(f"Attempt {attempt + 1}: Searching for: {query}")
                 
-                logger.info(f"Found {len(result_containers)} result containers")
-                
-                for container in result_containers[:max_results]:
-                    try:
-                        title_element = container.find('a', class_='result__a')
-                        title = title_element.get_text(strip=True) if title_element else "No title"
-                        
-                        url = title_element.get('href', '') if title_element else ''
-                        if url.startswith('/l/?uddg='):
-                            url = url.replace('/l/?uddg=', '')
-                        
-                        snippet_element = container.find('a', class_='result__snippet')
-                        snippet = snippet_element.get_text(strip=True) if snippet_element else "No description available"
-                        
-                        if title and url:
-                            results.append({
-                                "title": title,
-                                "url": url,
-                                "snippet": snippet
-                            })
+                async with session.get(search_url, params=params) as response:
+                    logger.info(f"DuckDuckGo returned status: {response.status}")
+                    
+                    # Accept all 2xx status codes including 202
+                    if not (200 <= response.status < 300):
+                        logger.warning(f"DuckDuckGo returned status {response.status}, retrying...")
+                        if attempt < 2:
+                            await asyncio.sleep(2 ** attempt)
+                            continue
+                        return [{"error": f"HTTP {response.status}: Failed to fetch search results after 3 attempts"}]
+                    
+                    html_content = await response.text()
+                    
+                    if not html_content or len(html_content) < 100:
+                        logger.warning(f"Received minimal content on attempt {attempt + 1}")
+                        if attempt < 2:
+                            await asyncio.sleep(2 ** attempt)
+                            continue
+                        return [{"error": "Received empty response from search service"}]
+                    
+                    soup = BeautifulSoup(html_content, 'html.parser')
+                    
+                    results = []
+                    result_containers = soup.find_all('div', class_='result__body')
+                    
+                    logger.info(f"Found {len(result_containers)} result containers")
+                    
+                    for container in result_containers[:max_results]:
+                        try:
+                            title_element = container.find('a', class_='result__a')
+                            title = title_element.get_text(strip=True) if title_element else "No title"
                             
-                    except Exception as e:
-                        logger.error(f"Error parsing search result: {e}")
-                        continue
-                
-                if not results:
-                    links = soup.find_all('a', class_='result__a')
-                    for i, link in enumerate(links[:max_results]):
-                        if link.get('href'):
-                            results.append({
-                                "title": link.get_text(strip=True) or f"Result {i+1}",
-                                "url": link.get('href', ''),
-                                "snippet": "No description available"
-                            })
-                
-                logger.info(f"Extracted {len(results)} results")
-                return results if results else [{"error": "No search results found"}]
-                
-        except asyncio.TimeoutError:
-            logger.error("Search request timed out")
-            return [{"error": "Search request timed out"}]
-        except Exception as e:
-            logger.error(f"Search error: {e}")
-            return [{"error": f"Search error: {str(e)}"}]
+                            url = title_element.get('href', '') if title_element else ''
+                            if url.startswith('/l/?uddg='):
+                                url = url.replace('/l/?uddg=', '')
+                            
+                            snippet_element = container.find('a', class_='result__snippet')
+                            snippet = snippet_element.get_text(strip=True) if snippet_element else "No description available"
+                            
+                            if title and url and url.startswith('http'):
+                                results.append({
+                                    "title": title,
+                                    "url": url,
+                                    "snippet": snippet
+                                })
+                                
+                        except Exception as e:
+                            logger.error(f"Error parsing search result: {e}")
+                            continue
+                    
+                    if not results:
+                        # Fallback: try to find any links
+                        links = soup.find_all('a', class_='result__a')
+                        for i, link in enumerate(links[:max_results]):
+                            if link.get('href') and link.get('href').startswith('http'):
+                                results.append({
+                                    "title": link.get_text(strip=True) or f"Result {i+1}",
+                                    "url": link.get('href', ''),
+                                    "snippet": "No description available"
+                                })
+                    
+                    if results:
+                        logger.info(f"Successfully extracted {len(results)} results")
+                        return results
+                    else:
+                        if attempt < 2:
+                            await asyncio.sleep(2 ** attempt)
+                            continue
+                        return [{
+                            "title": f"Search completed for: {query}",
+                            "url": "https://duckduckgo.com",
+                            "snippet": f"Search was performed but specific results could not be parsed. Status: {response.status}"
+                        }]
+                        
+            except asyncio.TimeoutError:
+                logger.error(f"Search request timed out on attempt {attempt + 1}")
+                if attempt < 2:
+                    await asyncio.sleep(2 ** attempt)
+                    continue
+                return [{"error": "Search request timed out"}]
+            except Exception as e:
+                logger.error(f"Search error on attempt {attempt + 1}: {e}")
+                if attempt < 2:
+                    await asyncio.sleep(2 ** attempt)
+                    continue
+                return [{"error": f"Search error: {str(e)}"}]
+        
+        return [{"error": "All search attempts failed"}]
     
     async def close(self):
         if self.session:
@@ -267,8 +300,6 @@ def debug_routes():
             "name": getattr(route, 'name', 'unknown')
         })
     return {"routes": routes}
-
-# Add these routes to your main FastAPI app
 
 @fastapi_app.get("/debug/env-check")
 async def check_environment():
