@@ -21,16 +21,9 @@ class DuckDuckGoSearchTool(BaseTool):
 
     def _get_mcp_url(self) -> str:
         """Get the MCP server URL"""
-        # Try different possible URLs for your MCP server
-        mcp_urls = [
-            "http://localhost:8765/mcp",  # Local development
-            "http://127.0.0.1:8765/mcp",  # Local development alternative
-            "http://math-bot-back.onrender.com/mcp",  # Your production URL
-            "http://localhost:8000/mcp",  # If running on same server
-        ]
-        
-        # Return the production URL for now, but you might want to make this configurable
-        return os.environ.get("MCP_SERVER_URL", "http://math-bot-back.onrender.com/mcp")
+        # Use internal endpoint when running in the same process
+        base_url = os.environ.get("BASE_URL", "http://localhost:8000")
+        return f"{base_url}/mcp"
 
     async def _arun(self, query: str) -> str:
         """Run web search asynchronously using DuckDuckGo MCP endpoint."""
