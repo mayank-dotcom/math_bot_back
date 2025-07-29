@@ -318,3 +318,4 @@ class DuckDuckGoSearchTool(BaseTool):
                 return loop.run_until_complete(self._arun(query))
         except RuntimeError:
             return asyncio.run(self._arun(query))
+#mkgnbkfnb
