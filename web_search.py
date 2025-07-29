@@ -91,7 +91,6 @@
 #             # No event loop, create a new one
 #             return asyncio.run(self._arun(query))
 
-
 import os
 import aiohttp
 import json
@@ -183,8 +182,9 @@ class DuckDuckGoSearchTool(BaseTool):
         except Exception as e:
             print(f"Unexpected error in web search: {str(e)}")
             import traceback
-            traceback.print_exc()
-            return f"Error executing web search: {str(e)}"
+            error_traceback = traceback.format_exc()
+            print(f"Full traceback: {error_traceback}")
+            return f"Error executing web search: {str(e)}. Full error: {error_traceback[:500]}..."
     
     def _run(self, query: str) -> str:
         """Synchronous version - not supported for this async tool."""

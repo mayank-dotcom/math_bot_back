@@ -227,6 +227,59 @@ async def handle_search_request(request: SearchRequest):
         logger.error(f"Error handling search request: {e}")
         raise HTTPException(status_code=500, detail=f"Search server error: {str(e)}")
 
+
+
+
+# Add these routes to your main FastAPI app (in the alternative_main_py)
+
+@fastapi_app.get("/debug/mcp-test")
+async def test_mcp_directly():
+    """Test the MCP endpoint directly"""
+    try:
+        # Test the search service directly
+        results = await search_service.search_duckduckgo("test math query", 3)
+        return {
+            "status": "success", 
+            "results": results,
+            "message": "MCP search service is working"
+        }
+    except Exception as e:
+        import traceback
+        return {
+            "status": "error", 
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
+
+@fastapi_app.post("/debug/mcp-full-test")
+async def test_mcp_full_flow():
+    """Test the full MCP flow like the tool would"""
+    try:
+        request = SearchRequest(
+            method="search",
+            params={"query": "algebra basics", "max_results": 3}
+        )
+        result = await handle_search_request(request)
+        return {"status": "success", "result": result}
+    except Exception as e:
+        import traceback
+        return {
+            "status": "error", 
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
+
+@fastapi_app.get("/debug/routes")
+def debug_routes():
+    """Debug endpoint to see all available routes"""
+    routes = []
+    for route in fastapi_app.routes:
+        routes.append({
+            "path": route.path,
+            "methods": getattr(route, 'methods', []),
+            "name": getattr(route, 'name', 'unknown')
+        })
+    return {"routes": routes}
 # Include your API routes under /api
 fastapi_app.include_router(router, prefix="/api")
 
