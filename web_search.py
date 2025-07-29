@@ -92,7 +92,6 @@
 #             return asyncio.run(self._arun(query))
 
 
-
 import os
 import aiohttp
 import json
@@ -108,19 +107,17 @@ class DuckDuckGoSearchTool(BaseTool):
     description: str = "Useful for searching the web for current information or specific questions that cannot be answered from the syllabus context. Use this tool when you need to find information that is not available in the provided mathematical context."
     args_schema: Type[BaseModel] = WebSearchInput
     
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        # Since MCP endpoint is now part of the same app, we use the same base URL
-        # In production on Render, this will be your deployed URL
-        # In development, this could be localhost
-        self.base_url = os.environ.get("BASE_URL", "http://math-bot-back.onrender.com")
-        self.mcp_server_url = f"{self.base_url}/mcp"
-        print(f"Initialized DuckDuckGoSearchTool with URL: {self.mcp_server_url}")
+    def _get_mcp_url(self) -> str:
+        """Get the MCP server URL"""
+        base_url = os.environ.get("BASE_URL", "http://math-bot-back.onrender.com")
+        return f"{base_url}/mcp"
     
     async def _arun(self, query: str) -> str:
         """Run web search asynchronously using DuckDuckGo MCP endpoint."""
         try:
+            mcp_server_url = self._get_mcp_url()
             print(f"Performing web search for: {query}")
+            print(f"Using MCP URL: {mcp_server_url}")
             
             # Set timeout for the search request
             timeout = aiohttp.ClientTimeout(total=45, connect=15)
@@ -134,11 +131,11 @@ class DuckDuckGoSearchTool(BaseTool):
                     }
                 }
                 
-                print(f"Sending request to MCP endpoint: {self.mcp_server_url}")
+                print(f"Sending request to MCP endpoint: {mcp_server_url}")
                 print(f"Payload: {json.dumps(payload, indent=2)}")
                 
                 async with session.post(
-                    self.mcp_server_url, 
+                    mcp_server_url, 
                     json=payload,
                     headers={
                         "Content-Type": "application/json",
