@@ -21,7 +21,16 @@ class DuckDuckGoSearchTool(BaseTool):
 
     def _get_mcp_url(self) -> str:
         """Get the MCP server URL"""
-        return "http://math-bot-back.onrender.com/mcp"
+        # Try different possible URLs for your MCP server
+        mcp_urls = [
+            "http://localhost:8765/mcp",  # Local development
+            "http://127.0.0.1:8765/mcp",  # Local development alternative
+            "http://math-bot-back.onrender.com/mcp",  # Your production URL
+            "http://localhost:8000/mcp",  # If running on same server
+        ]
+        
+        # Return the production URL for now, but you might want to make this configurable
+        return os.environ.get("MCP_SERVER_URL", "http://math-bot-back.onrender.com/mcp")
 
     async def _arun(self, query: str) -> str:
         """Run web search asynchronously using DuckDuckGo MCP endpoint."""
@@ -29,7 +38,8 @@ class DuckDuckGoSearchTool(BaseTool):
         print(f"Performing web search for: {query}")
         print(f"Using MCP URL: {mcp_server_url}")
 
-        timeout = aiohttp.ClientTimeout(total=120, connect=120)
+        # Increased timeout for better reliability
+        timeout = aiohttp.ClientTimeout(total=60, connect=30)
 
         for attempt in range(3):
             try:
@@ -42,32 +52,40 @@ class DuckDuckGoSearchTool(BaseTool):
                         }
                     }
 
-                    print(f"Sending request to MCP endpoint: {mcp_server_url}")
+                    print(f"Attempt {attempt + 1}: Sending request to MCP endpoint: {mcp_server_url}")
                     print(f"Payload: {json.dumps(payload, indent=2)}")
+
+                    headers = {
+                        "Content-Type": "application/json",
+                        "Accept": "application/json",
+                        "User-Agent": "DuckDuckGoSearchTool/1.0"
+                    }
 
                     async with session.post(
                         mcp_server_url,
                         json=payload,
-                        headers={
-                            "Content-Type": "application/json",
-                            "Accept": "application/json"
-                        }
+                        headers=headers
                     ) as response:
 
                         print(f"Response status: {response.status}")
+                        response_text = await response.text()
+                        print(f"Response body: {response_text[:500]}...")
 
                         if response.status != 200:
-                            error_text = await response.text()
-                            print(f"MCP endpoint error: Status {response.status}, Body: {error_text}")
-                            return (
-                                f"Error: Received status code {response.status} from search endpoint. "
-                                f"This might be a temporary issue with the search service."
-                            )
+                            print(f"MCP endpoint error: Status {response.status}, Body: {response_text}")
+                            if attempt == 2:  # Last attempt
+                                return (
+                                    f"Error: Search service returned status {response.status}. "
+                                    f"Response: {response_text[:200]}..."
+                                )
+                            await asyncio.sleep(2 ** attempt)
+                            continue
 
                         try:
                             result = await response.json()
                         except json.JSONDecodeError as e:
                             print(f"JSON decode error: {str(e)}")
+                            print(f"Raw response: {response_text}")
                             return f"Error: Invalid JSON response from search service: {str(e)}"
 
                         print(f"MCP endpoint response: {result}")
@@ -88,36 +106,47 @@ class DuckDuckGoSearchTool(BaseTool):
             except asyncio.TimeoutError:
                 print(f"Timeout on attempt {attempt + 1}")
                 if attempt == 2:
-                    return "Error: Search request timed out. The search service may be busy. Please try again."
+                    return "Error: Search request timed out after 3 attempts. The search service may be busy."
                 await asyncio.sleep(2 ** attempt)
 
             except aiohttp.ClientConnectorError as e:
-                print(f"Connection error: {str(e)}")
-                return f"Error: Could not connect to search service. Please check if the server is running."
+                print(f"Connection error on attempt {attempt + 1}: {str(e)}")
+                if attempt == 2:
+                    return f"Error: Could not connect to search service at {mcp_server_url}. Please check if the server is running."
+                await asyncio.sleep(2 ** attempt)
 
             except aiohttp.ClientError as e:
-                print(f"Client error: {str(e)}")
-                return f"Error: Network issue while connecting to search service: {str(e)}"
+                print(f"Client error on attempt {attempt + 1}: {str(e)}")
+                if attempt == 2:
+                    return f"Error: Network issue while connecting to search service: {str(e)}"
+                await asyncio.sleep(2 ** attempt)
 
             except asyncio.CancelledError:
                 print("Search request was cancelled.")
                 return "Error: Search request was cancelled. Please try again."
 
             except Exception as e:
-                print(f"Unexpected error in web search: {str(e)}")
+                print(f"Unexpected error in web search attempt {attempt + 1}: {str(e)}")
                 import traceback
                 error_traceback = traceback.format_exc()
                 print(f"Full traceback: {error_traceback}")
-                return f"Error executing web search: {str(e)}. Full error: {error_traceback[:500]}..."
+                if attempt == 2:
+                    return f"Error executing web search: {str(e)}"
+                await asyncio.sleep(2 ** attempt)
+
+        return "Error: All search attempts failed."
 
     def _run(self, query: str) -> str:
-        """Synchronous version - not supported for this async tool."""
+        """Synchronous version - runs the async version."""
         try:
             loop = asyncio.get_event_loop()
             if loop.is_running():
-                return "Error: This tool requires async execution context."
+                # If we're already in an async context, we need to handle this differently
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(asyncio.run, self._arun(query))
+                    return future.result()
             else:
                 return loop.run_until_complete(self._arun(query))
         except RuntimeError:
             return asyncio.run(self._arun(query))
-# mw fd ,d
