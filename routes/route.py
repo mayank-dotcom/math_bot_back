@@ -553,7 +553,7 @@ def setup_workflow(syllabus_context):
                     traceback.print_exc()
                     
                     error_message = ToolMessage(
-                        content=f"Error executing {tool_call['name']}: {str(e)}. Full traceback: {traceback.format_exc()[:500]}",
+                        content=f"Error executing {tool_call['name']}: {str(e)}",
                         tool_call_id=tool_call["id"]
                     )
                     tool_messages.append(error_message)
