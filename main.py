@@ -47,6 +47,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import os
 import subprocess
+import socketio
 
 load_dotenv()
 
