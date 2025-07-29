@@ -12,9 +12,9 @@ class DuckDuckGoSearchTool(BaseTool):
     name: str = "web_search"
     description: str = "Useful for searching the web for current information or specific questions that cannot be answered from the syllabus context. Use this tool when you need to find information that is not available in the provided mathematical context."
     args_schema: Type[BaseModel] = WebSearchInput
-    mcp_server_url: str = "http://127.0.0.1:8765/mcp"  # Default value
+    mcp_server_url: str = "http://math-bot-back.onrender.com/mcp"  # Default value
     
-    def __init__(self, mcp_server_url: str = "http://127.0.0.1:8765/mcp", **kwargs):
+    def __init__(self, mcp_server_url: str = "http://math-bot-back.onrender.com/mcp", **kwargs):
         super().__init__(**kwargs)
         self.mcp_server_url = mcp_server_url
     
