@@ -133,6 +133,7 @@ class DuckDuckGoSearchTool(BaseTool):
                 print(f"Sending request to MCP endpoint: {mcp_server_url}")
                 print(f"Payload: {json.dumps(payload, indent=2)}")
                 
+                # ENSURE THIS IS A POST REQUEST, NOT GET
                 async with session.post(
                     mcp_server_url, 
                     json=payload,
