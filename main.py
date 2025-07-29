@@ -520,6 +520,114 @@ def debug_routes():
         })
     return {"routes": routes}
 
+# Add these routes to your main FastAPI app
+
+@fastapi_app.get("/debug/env-check")
+async def check_environment():
+    """Check environment variables and configuration"""
+    return {
+        "openai_api_key_set": bool(os.environ.get("OPENAI_API_KEY")),
+        "openai_api_key_length": len(os.environ.get("OPENAI_API_KEY", "")) if os.environ.get("OPENAI_API_KEY") else 0,
+        "mcp_server_url": os.environ.get("MCP_SERVER_URL", "not_set"),
+        "available_routes": [route.path for route in fastapi_app.routes],
+        "current_host": "self",
+        "environment_vars": {k: v for k, v in os.environ.items() if "API" in k or "MCP" in k or "KEY" in k}
+    }
+
+@fastapi_app.get("/debug/test-internal-mcp")
+async def test_internal_mcp():
+    """Test the internal MCP endpoint"""
+    try:
+        # Test the internal search directly
+        request = SearchRequest(
+            method="search",
+            params={"query": "test query", "max_results": 3}
+        )
+        result = await handle_search_request(request)
+        return {
+            "status": "success",
+            "internal_mcp_working": True,
+            "result": result
+        }
+    except Exception as e:
+        import traceback
+        return {
+            "status": "error",
+            "internal_mcp_working": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
+
+@fastapi_app.get("/debug/test-web-search-connection")
+async def test_web_search_connection():
+    """Test web search tool connection without going through LangGraph"""
+    try:
+        import aiohttp
+        import asyncio
+        
+        # Test connection to our own MCP endpoint
+        mcp_url = "http://localhost:8000/mcp"  # Assuming we're running on port 8000
+        
+        payload = {
+            "method": "search",
+            "params": {
+                "query": "simple test",
+                "max_results": 2
+            }
+        }
+        
+        timeout = aiohttp.ClientTimeout(total=30)
+        
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(
+                mcp_url,
+                json=payload,
+                headers={"Content-Type": "application/json"}
+            ) as response:
+                result = await response.json()
+                
+                return {
+                    "status": "success",
+                    "connection_working": True,
+                    "response_status": response.status,
+                    "result": result
+                }
+                
+    except Exception as e:
+        import traceback
+        return {
+            "status": "error",
+            "connection_working": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
+
+@fastapi_app.get("/debug/simple-ai-test")
+async def simple_ai_test():
+    """Test AI processing without web search"""
+    try:
+        from routes.route import process_ai_query
+        
+        # Simple math question that shouldn't need web search
+        simple_query = "What is 2 + 2?"
+        result = await process_ai_query(simple_query, "debug_session", 5)
+        
+        return {
+            "status": "success",
+            "ai_working": True,
+            "query": simple_query,
+            "result": result
+        }
+        
+    except Exception as e:
+        import traceback
+        return {
+            "status": "error",
+            "ai_working": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
+
 # Include your API routes under /api
 fastapi_app.include_router(router, prefix="/api")
 
