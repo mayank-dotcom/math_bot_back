@@ -108,24 +108,13 @@ class DuckDuckGoSearchTool(BaseTool):
     
     def _get_mcp_url(self) -> str:
         """Get the MCP server URL"""
-        base_url = os.environ.get("BASE_URL", "http://math-bot-back.onrender.com")
-        return f"{base_url}/mcp"
+        # Use the confirmed MCP server URL
+        return "http://math-bot-back.onrender.com/mcp"
     
     async def _arun(self, query: str) -> str:
         """Run web search asynchronously using DuckDuckGo MCP endpoint."""
         try:
             mcp_server_url = self._get_mcp_url()
-            print(f"Testing endpoint: {mcp_server_url}")
-            
-            # First verify endpoint availability
-            async with aiohttp.ClientSession() as session:
-                # Test GET request to check endpoint
-                async with session.get(mcp_server_url) as test_response:
-                    if test_response.status == 405:
-                        return "Error: Endpoint exists but doesn't accept POST requests"
-                    elif test_response.status != 200:
-                        return f"Error: Endpoint unavailable (HTTP {test_response.status})"
-
             print(f"Performing web search for: {query}")
             print(f"Using MCP URL: {mcp_server_url}")
             
